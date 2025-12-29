@@ -62,8 +62,8 @@ class Task(models.Model):
     )
 
     class Meta:
-        verbose_name = 'Задача1'
-        verbose_name_plural = 'Задачи1'
+        verbose_name = 'Задача'
+        verbose_name_plural = 'Задачи'
         ordering = ['-created_at']
 
     def __str__(self):
@@ -84,7 +84,7 @@ class Task(models.Model):
         super().save(*args, **kwargs)
 
 
-# === ДОБАВЛЯЕМ ДЛЯ ЗАДАНИЯ: Модель категории ===
+# === Модель категории ===
 class Category(models.Model):
     """
     Модель для категорий задач.
@@ -116,12 +116,19 @@ class Category(models.Model):
         return self.name
 
 
-# === ДОБАВЛЯЕМ ДЛЯ ЗАДАНИЯ: Модель подзадачи ===
+# === Модель подзадачи ===
 class SubTask(models.Model):
     """
     Модель для подзадач.
-    Нужна для заданий 1, 3 и 5.
     """
+    # Статусы подзадач (для задания 3 - фильтрация по статусу)
+    STATUS_CHOICES = [
+        ('not_started', 'Не начата'),
+        ('in_progress', 'В процессе'),
+        ('done', 'Выполнена'),
+        ('blocked', 'Заблокирована'),
+    ]
+
     title = models.CharField(
         max_length=200,
         verbose_name='Название подзадачи'
@@ -138,11 +145,19 @@ class SubTask(models.Model):
         verbose_name='Выполнено'
     )
 
+    # Добавляем поле статуса для задания 3
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='not_started',
+        verbose_name='Статус подзадачи'
+    )
+
     # Связь с основной задачей
     task = models.ForeignKey(
         Task,
         on_delete=models.CASCADE,
-        related_name='subtasks',  # Это важно для задания 3 (вложенные сериализаторы)
+        related_name='subtasks',
         verbose_name='Основная задача'
     )
 
@@ -163,36 +178,4 @@ class SubTask(models.Model):
 
     def __str__(self):
         status = "✓" if self.completed else "✗"
-        return f"{self.title} {status}"
-
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name='Дата создания'
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name='Дата обновления'
-    )
-
-    class Meta:
-        verbose_name = 'Задача2'
-        verbose_name_plural = 'Задачи2'
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.title} ({self.get_status_display()})"
-
-    @property
-    def is_overdue(self):
-        """Проверка, просрочена ли задача"""
-        if self.deadline:
-            return self.deadline < timezone.now()
-        return False
-
-    def save(self, *args, **kwargs):
-        """Переопределение метода save для дополнительной логики"""
-        if self.status == 'completed' and not self.deadline:
-            # Если задача завершена без срока, устанавливаем deadline на текущее время
-            self.deadline = timezone.now()
-        super().save(*args, **kwargs)
+        return f"{self.title} {status} ({self.get_status_display()})"

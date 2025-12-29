@@ -1,4 +1,4 @@
-from rest_framework import serializers  # ИМЕННО ТАК нужно импортировать!
+from rest_framework import serializers
 from django.utils.timezone import now
 from task_manager.models import Task, SubTask, Category
 
@@ -6,7 +6,7 @@ from task_manager.models import Task, SubTask, Category
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
-        fields = ['id', 'title', 'description', 'status', 'deadline', 'created_at']
+        fields = ['id', 'title', 'description', 'status', 'priority', 'deadline', 'created_at']
 
 
 # === ЗАДАНИЕ 1: SubTaskCreateSerializer ===
@@ -19,8 +19,8 @@ class SubTaskCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SubTask
-        fields = ['id', 'title', 'description', 'completed', 'task', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']  # Ещё один способ сделать поле read_only
+        fields = ['id', 'title', 'description', 'completed', 'status', 'task', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
 
 
 # === ЗАДАНИЕ 2: CategoryCreateSerializer ===
@@ -74,16 +74,18 @@ class CategoryCreateSerializer(serializers.ModelSerializer):
         return instance
 
 
-# Базовый сериализатор для подзадач (для задания 3)
+# Базовый сериализатор для подзадач (для задания 3 и новых заданий)
 class SubTaskSerializer(serializers.ModelSerializer):
     """
     Простой сериализатор для подзадач.
     Будет использоваться во вложенном виде.
     """
+    task_title = serializers.CharField(source='task.title', read_only=True)
 
     class Meta:
         model = SubTask
-        fields = ['id', 'title', 'description', 'completed', 'task', 'created_at']
+        fields = ['id', 'title', 'description', 'completed', 'status', 'task', 'task_title', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
 
 
 # === ЗАДАНИЕ 3: TaskDetailSerializer ===
@@ -92,7 +94,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
     Детальный сериализатор задачи с вложенными подзадачами.
     Показывает все подзадачи, связанные с задачей.
     """
-    subtasks = SubTaskSerializer(many=True, read_only=True)  # Вложенный сериализатор
+    subtasks = SubTaskSerializer(many=True, read_only=True)
 
     class Meta:
         model = Task
