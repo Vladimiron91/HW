@@ -1,9 +1,104 @@
 from django.db import models
-from django.utils import timezone
+from django.utils.timezone import now
 
 
+#ЗАДАНИЕ 2: Менеджер для мягкого удаления
+class SoftDeleteManager(models.Manager):
+    """
+    Менеджер для исключения удалённых записей из стандартных запросов.
+    По умолчанию возвращаются только не удалённые объекты.
+    """
+
+    def get_queryset(self):
+        """
+        Переопределяем метод get_queryset(),
+        чтобы он по умолчанию выдавал только те записи, которые не "удалены" из базы.
+        """
+        return super().get_queryset().filter(is_deleted=False)
+
+    def with_deleted(self):
+        """Возвращает все объекты, включая удалённые"""
+        return super().get_queryset()
+
+    def deleted_only(self):
+        """Возвращает только удалённые объекты"""
+        return super().get_queryset().filter(is_deleted=True)
+
+
+#МОДЕЛЬ КАТЕГОРИИ
+class Category(models.Model):
+    """
+    Модель категории с мягким удалением.
+    Задание 2: Добавлены поля is_deleted и deleted_at
+    """
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name='Название категории'
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Описание категории'
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата создания'
+    )
+
+    #ЗАДАНИЕ 2: Поля для мягкого удаления
+    is_deleted = models.BooleanField(
+        default=False,
+        verbose_name='Удалена?'
+    )
+
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Дата удаления'
+    )
+
+    #ЗАДАНИЕ 2: Переопределение менеджера
+    objects = SoftDeleteManager()  # По умолчанию - только активные категории
+    all_objects = models.Manager()  # Полный доступ (включая удалённые)
+
+    class Meta:
+        verbose_name = 'Категория'
+        verbose_name_plural = 'Категории'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    #ЗАДАНИЕ 2: Метод мягкого удаления
+    def delete(self, using=None, keep_parents=False):
+        """
+        Переопределяем метод удаления для мягкого удаления.
+        Обновляет поля is_deleted=True и deleted_at=текущее время.
+        """
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.save(update_fields=['is_deleted', 'deleted_at'])
+
+    def hard_delete(self):
+        """Полное удаление из базы данных"""
+        super().delete()
+
+    def restore(self):
+        """Восстановление удалённой категории"""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=['is_deleted', 'deleted_at'])
+
+
+#МОДЕЛЬ ЗАДАЧИ (для связи с категорией)
 class Task(models.Model):
-    # Статусы задач
+    """
+    Модель задачи, связанная с категорией.
+    Нужна для подсчёта задач в категории (Задание 1).
+    """
     STATUS_CHOICES = [
         ('pending', 'Ожидает'),
         ('in_progress', 'В работе'),
@@ -11,7 +106,6 @@ class Task(models.Model):
         ('cancelled', 'Отменена'),
     ]
 
-    # Приоритеты задач (добавляем для задания)
     PRIORITY_CHOICES = [
         ('low', 'Низкий'),
         ('medium', 'Средний'),
@@ -37,7 +131,6 @@ class Task(models.Model):
         verbose_name='Статус'
     )
 
-    # Добавляем поле приоритета
     priority = models.CharField(
         max_length=20,
         choices=PRIORITY_CHOICES,
@@ -49,6 +142,16 @@ class Task(models.Model):
         blank=True,
         null=True,
         verbose_name='Срок выполнения'
+    )
+
+    # Связь с категорией (для подсчёта задач)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',  # Важно для подсчёта задач!
+        verbose_name='Категория'
     )
 
     created_at = models.DateTimeField(
@@ -73,55 +176,15 @@ class Task(models.Model):
     def is_overdue(self):
         """Проверка, просрочена ли задача"""
         if self.deadline:
-            return self.deadline < timezone.now()
+            return self.deadline < now()
         return False
 
-    def save(self, *args, **kwargs):
-        """Переопределение метода save для дополнительной логики"""
-        if self.status == 'completed' and not self.deadline:
-            # Если задача завершена без срока, устанавливаем deadline на текущее время
-            self.deadline = timezone.now()
-        super().save(*args, **kwargs)
 
-
-# === Модель категории ===
-class Category(models.Model):
-    """
-    Модель для категорий задач.
-    Нужна для задания 2 (проверка уникальности названия).
-    """
-    name = models.CharField(
-        max_length=100,
-        unique=True,  # Важно для проверки уникальности
-        verbose_name='Название категории'
-    )
-
-    description = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name='Описание категории'
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name='Дата создания'
-    )
-
-    class Meta:
-        verbose_name = 'Категория'
-        verbose_name_plural = 'Категории'
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
-# === Модель подзадачи ===
+#МОДЕЛЬ ПОДЗАДАЧИ (опционально)
 class SubTask(models.Model):
     """
-    Модель для подзадач.
+    Модель подзадачи (опционально, если нужно).
     """
-    # Статусы подзадач (для задания 3 - фильтрация по статусу)
     STATUS_CHOICES = [
         ('not_started', 'Не начата'),
         ('in_progress', 'В процессе'),
@@ -145,7 +208,6 @@ class SubTask(models.Model):
         verbose_name='Выполнено'
     )
 
-    # Добавляем поле статуса для задания 3
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -153,7 +215,6 @@ class SubTask(models.Model):
         verbose_name='Статус подзадачи'
     )
 
-    # Связь с основной задачей
     task = models.ForeignKey(
         Task,
         on_delete=models.CASCADE,
