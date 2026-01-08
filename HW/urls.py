@@ -1,24 +1,43 @@
 """
 URL configuration for HW project.
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/6.0/topics/http/urls/
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  path('', views.home, name='home')
+Class-based views
+    1. Add an import:  from other_app.views import Home
+    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
+Including another URLconf
+    1. Import the include() function: from django.urls import include, path
+    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
 
-# Импортируем только то, что существует
-from task_manager.views import CategoryViewSet
-
-# Создаем router
-router = DefaultRouter()
-router.register(r'categories', CategoryViewSet, basename='category')
+# ЗАДАНИЕ 1: JWT токены
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+    TokenVerifyView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Подключаем router для ModelViewSet
-    path('api/v1/', include(router.urls)),
+    # ==================== ЗАДАНИЕ 1: JWT АУТЕНТИФИКАЦИЯ ====================
+    # Получение JWT токена (access + refresh)
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
 
-    # Остальные маршруты (если нужны)
-    # path('', include('task_manager.urls')),
+    # Обновление access токена с помощью refresh токена
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Проверка валидности токена (опционально)
+    path('api/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
+
+    # API приложения task_manager
+    path('api/v1/', include('task_manager.urls', namespace='task_manager')),
 ]

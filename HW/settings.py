@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,10 +40,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    # Сторонние приложения
     'rest_framework',
-    'task_manager',
-
+    'rest_framework_simplejwt',  # ЗАДАНИЕ 1: JWT аутентификация
     'django_filters',
+
+    # Мои приложения
+    'task_manager',
 ]
 
 MIDDLEWARE = [
@@ -59,8 +64,7 @@ ROOT_URLCONF = 'HW.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
-        ,
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -122,12 +126,126 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Default primary key field type
+# https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ======================================================================
+# ЗАДАНИЕ 1: НАСТРОЙКА JWT АУТЕНТИФИКАЦИИ
+# ======================================================================
+"""
+Установите: pip install djangorestframework-simplejwt
+"""
+
 REST_FRAMEWORK = {
+    # ==================== ЗАДАНИЕ 1: JWT АУТЕНТИФИКАЦИЯ ====================
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT токены
+        'rest_framework.authentication.SessionAuthentication',        # Сессии
+        'rest_framework.authentication.BasicAuthentication',          # Basic auth
+    ],
+
+    # ==================== ЗАДАНИЕ 2: ПЕРМИШЕНЫ ПО УМОЛЧАНИЮ ====================
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',  # Чтение для всех, запись только авторизованным
+    ],
+
+    # ==================== ЗАДАНИЕ 3: ГЛОБАЛЬНАЯ ПАГИНАЦИЯ ====================
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 5,  # 5 элементов по умолчанию
+
+    # ==================== ФИЛЬТРАЦИЯ ====================
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+}
+
+# ==================== НАСТРОЙКИ SIMPLE JWT ====================
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),     # Время жизни access токена
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),        # Время жизни refresh токена
+    'ROTATE_REFRESH_TOKENS': True,                      # Обновлять refresh токены
+    'BLACKLIST_AFTER_ROTATION': True,                   # Блокировать старые refresh токены
+    'UPDATE_LAST_LOGIN': True,                          # Обновлять последний вход
+
+    'ALGORITHM': 'HS256',                               # Алгоритм шифрования
+    'SIGNING_KEY': SECRET_KEY,                          # Ключ для подписи
+    'VERIFYING_KEY': None,                              # Ключ для проверки
+
+    'AUTH_HEADER_TYPES': ('Bearer',),                   # Тип заголовка для токена
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',           # Имя заголовка
+    'USER_ID_FIELD': 'id',                              # Поле для идентификации пользователя
+    'USER_ID_CLAIM': 'user_id',                         # Claim для user_id
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+
+    'JTI_CLAIM': 'jti',                                 # Unique identifier claim
+
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+}
+
+# ======================================================================
+# ЛОГИРОВАНИЕ (из предыдущего задания)
+# ======================================================================
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    'formatters': {
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+            'level': 'INFO',
+        },
+        'http_file': {
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'http_logs.log',
+            'formatter': 'verbose',
+            'level': 'INFO',
+        },
+        'db_file': {
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'db_logs.log',
+            'formatter': 'verbose',
+            'level': 'DEBUG',
+        },
+    },
+
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'django.server': {
+            'handlers': ['http_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['db_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
 }
