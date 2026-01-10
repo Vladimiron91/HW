@@ -1,33 +1,58 @@
 from rest_framework import serializers
 from django.utils.timezone import now
-from task_manager.models import Task, SubTask, Category  # Убедитесь, что SubTask импортирована
+from task_manager.models import Task, SubTask, Category
 
 
 class TaskSerializer(serializers.ModelSerializer):
+    # Поле для отображения имени владельца (только чтение)
+    owner_username = serializers.ReadOnlyField(source='owner.username')
+    # Поле для отображения названия категории
+    category_name = serializers.ReadOnlyField(source='category.name')
+    # Количество подзадач
+    subtasks_count = serializers.SerializerMethodField()
+    # Количество завершённых подзадач
+    completed_subtasks_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Task
-        fields = ['id', 'title', 'description', 'status', 'deadline', 'created_at']
+        fields = [
+            'id', 'title', 'description', 'status', 'priority',
+            'deadline', 'created_at', 'updated_at', 'category',
+            'category_name', 'owner', 'owner_username', 'subtasks_count',
+            'completed_subtasks_count', 'is_deleted', 'deleted_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'is_deleted', 'deleted_at']
+
+    def get_subtasks_count(self, obj):
+        """Получаем количество подзадач для задачи"""
+        return obj.subtasks.count()
+
+    def get_completed_subtasks_count(self, obj):
+        """Получаем количество выполненных подзадач"""
+        return obj.subtasks.filter(status='done').count()
 
 
-# ==================== ЗАДАНИЕ 1: SubTaskCreateSerializer ====================
 class SubTaskCreateSerializer(serializers.ModelSerializer):
     """
-    Специальный сериализатор для создания подзадач.
-    Поле created_at должно быть доступно только для чтения.
+    Сериализатор для создания подзадач.
+    Поля created_at и owner доступны только для чтения.
     """
-    created_at = serializers.DateTimeField(read_only=True)  # Задание 1: read_only поле
+    created_at = serializers.DateTimeField(read_only=True)
+    owner = serializers.ReadOnlyField(source='owner.username')
+    owner_id = serializers.ReadOnlyField(source='owner.id')
 
     class Meta:
         model = SubTask
-        fields = ['id', 'title', 'description', 'completed', 'task', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
+        fields = [
+            'id', 'title', 'description', 'completed', 'task',
+            'status', 'deadline', 'created_at', 'owner', 'owner_id'
+        ]
+        read_only_fields = ['created_at', 'owner', 'owner_id']
 
 
-# ==================== ЗАДАНИЕ 2: CategoryCreateSerializer ====================
 class CategoryCreateSerializer(serializers.ModelSerializer):
     """
     Сериализатор для создания категорий с проверкой уникальности.
-    Нужно переопределить методы create и update.
     """
 
     class Meta:
@@ -38,102 +63,142 @@ class CategoryCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """
         Проверяем уникальность названия при создании.
-        Если категория с таким именем уже есть - возвращаем ошибку.
         """
         name = validated_data.get('name')
 
-        # Проверяем, нет ли уже категории с таким именем
+        # Проверяем среди всех категорий (включая удалённые)
         if Category.objects.filter(name=name).exists():
-            raise serializers.ValidationError({
-                'name': 'Категория с таким названием уже существует.'
-            })
+            # Проверяем, не удалена ли такая категория
+            existing = Category.objects.get(name=name)
+            if existing.is_deleted:
+                # Восстанавливаем удалённую категорию
+                existing.is_deleted = False
+                existing.deleted_at = None
+                existing.description = validated_data.get('description', existing.description)
+                existing.save()
+                return existing
+            else:
+                raise serializers.ValidationError({
+                    'name': 'Категория с таким названием уже существует.'
+                })
 
-        # Если всё хорошо - создаём категорию
         return Category.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
         """
         Проверяем уникальность названия при обновлении.
-        Важно: проверяем только если имя изменилось.
         """
         name = validated_data.get('name')
 
-        # Если пытаемся изменить имя
         if name and name != instance.name:
-            # Проверяем, нет ли другой категории с таким именем
             if Category.objects.filter(name=name).exists():
-                raise serializers.ValidationError({
-                    'name': 'Категория с таким названием уже существует.'
-                })
+                existing = Category.objects.get(name=name)
+                if existing.is_deleted:
+                    raise serializers.ValidationError({
+                        'name': 'Невозможно изменить имя: категория с таким названием уже существует (удалена).'
+                    })
+                else:
+                    raise serializers.ValidationError({
+                        'name': 'Категория с таким названием уже существует.'
+                    })
 
-        # Обновляем остальные поля
         instance.name = validated_data.get('name', instance.name)
         instance.description = validated_data.get('description', instance.description)
         instance.save()
-
         return instance
 
 
-# Базовый сериализатор для подзадач
 class SubTaskSerializer(serializers.ModelSerializer):
     """
-    Простой сериализатор для подзадач.
-    Будет использоваться во вложенном виде.
+    Основной сериализатор для подзадач.
     """
+    task_title = serializers.ReadOnlyField(source='task.title')
+    owner_username = serializers.ReadOnlyField(source='owner.username')
+    is_overdue = serializers.ReadOnlyField()
 
     class Meta:
         model = SubTask
-        fields = ['id', 'title', 'description', 'completed', 'task', 'created_at']
-        read_only_fields = ['created_at']
+        fields = [
+            'id', 'title', 'description', 'completed', 'task', 'task_title',
+            'status', 'deadline', 'created_at', 'updated_at', 'owner',
+            'owner_username', 'is_deleted', 'deleted_at', 'is_overdue'
+        ]
+        read_only_fields = [
+            'created_at', 'updated_at', 'owner', 'owner_username',
+            'is_deleted', 'deleted_at', 'is_overdue'
+        ]
 
 
-# ==================== ЗАДАНИЕ 3: TaskDetailSerializer ====================
 class TaskDetailSerializer(serializers.ModelSerializer):
     """
     Детальный сериализатор задачи с вложенными подзадачами.
-    Показывает все подзадачи, связанные с задачей.
     """
     subtasks = SubTaskSerializer(many=True, read_only=True)
+    owner_username = serializers.ReadOnlyField(source='owner.username')
+    category_name = serializers.ReadOnlyField(source='category.name')
+    is_overdue = serializers.ReadOnlyField()
 
     class Meta:
         model = Task
         fields = [
             'id', 'title', 'description', 'status', 'priority',
-            'deadline', 'created_at', 'updated_at', 'subtasks'
+            'deadline', 'created_at', 'updated_at', 'subtasks',
+            'category', 'category_name', 'owner', 'owner_username',
+            'is_deleted', 'deleted_at', 'is_overdue'
         ]
 
 
-# ==================== ЗАДАНИЕ 4: TaskCreateSerializer ====================
 class TaskCreateSerializer(serializers.ModelSerializer):
     """
     Сериализатор для создания задач с валидацией поля deadline.
-    Дата deadline не может быть в прошлом.
+    Поле owner автоматически заполняется из запроса.
     """
+    owner = serializers.ReadOnlyField(source='owner.username')
+    owner_id = serializers.ReadOnlyField(source='owner.id')
 
     class Meta:
         model = Task
-        fields = ['id', 'title', 'description', 'status', 'priority', 'deadline']
+        fields = [
+            'id', 'title', 'description', 'status', 'priority',
+            'deadline', 'category', 'owner', 'owner_id'
+        ]
+        read_only_fields = ['owner', 'owner_id']
 
     def validate_deadline(self, value):
         """
         Проверяем, что deadline не в прошлом.
-        Если дата в прошлом - возвращаем ошибку валидации.
         """
         if value and value < now():
-            raise serializers.ValidationError("Дата дедлайна не может быть в прошлом.")
+            raise serializers.ValidationError("Дедлайн не может быть в прошлом.")
         return value
 
 
-# ==================== ДЛЯ НОВОГО ЗАДАНИЯ: Сериализаторы для категорий ====================
 class CategorySerializer(serializers.ModelSerializer):
     """
     Сериализатор для отображения категорий.
+    Включает информацию о количестве задач.
     """
+    tasks_count = serializers.SerializerMethodField()
+    active_tasks_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'created_at', 'is_deleted', 'deleted_at']
-        read_only_fields = ['created_at', 'is_deleted', 'deleted_at']
+        fields = [
+            'id', 'name', 'description', 'created_at',
+            'is_deleted', 'deleted_at', 'tasks_count', 'active_tasks_count'
+        ]
+        read_only_fields = [
+            'created_at', 'is_deleted', 'deleted_at',
+            'tasks_count', 'active_tasks_count'
+        ]
+
+    def get_tasks_count(self, obj):
+        """Общее количество задач в категории"""
+        return obj.tasks.count()
+
+    def get_active_tasks_count(self, obj):
+        """Количество активных (не удалённых) задач"""
+        return obj.tasks.filter(is_deleted=False).count()
 
 
 class CategoryCreateUpdateSerializer(serializers.ModelSerializer):
@@ -147,14 +212,53 @@ class CategoryCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         """
-        Проверяем уникальность имени среди не удалённых категорий.
+        Проверяем уникальность имени среди активных категорий.
         """
-        # Исключаем текущую категорию при обновлении
-        if self.instance:
-            if Category.objects.filter(name=value, is_deleted=False).exclude(id=self.instance.id).exists():
-                raise serializers.ValidationError("Категория с таким названием уже существует.")
-        else:
-            # При создании проверяем среди всех не удалённых
+        # При создании
+        if not self.instance:
+            # Проверяем среди не удалённых категорий
             if Category.objects.filter(name=value, is_deleted=False).exists():
                 raise serializers.ValidationError("Категория с таким названием уже существует.")
+        # При обновлении
+        else:
+            # Если имя изменилось, проверяем уникальность
+            if value != self.instance.name:
+                if Category.objects.filter(name=value, is_deleted=False).exists():
+                    raise serializers.ValidationError("Категория с таким названием уже существует.")
         return value
+
+
+class UserTaskSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для отображения задач текущего пользователя.
+    Используется в специальных эндпоинтах.
+    """
+    category_name = serializers.ReadOnlyField(source='category.name')
+    is_overdue = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Task
+        fields = [
+            'id', 'title', 'description', 'status', 'priority',
+            'deadline', 'category', 'category_name', 'created_at',
+            'is_overdue', 'subtasks_count'
+        ]
+
+    def get_subtasks_count(self, obj):
+        """Количество подзадач"""
+        return obj.subtasks.count()
+
+
+class UserSubTaskSerializer(serializers.ModelSerializer):
+    """
+    Сериализатор для отображения подзадач текущего пользователя.
+    """
+    task_title = serializers.ReadOnlyField(source='task.title')
+    is_overdue = serializers.ReadOnlyField()
+
+    class Meta:
+        model = SubTask
+        fields = [
+            'id', 'title', 'description', 'completed', 'status',
+            'deadline', 'task', 'task_title', 'created_at', 'is_overdue'
+        ]

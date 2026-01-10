@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',  # ЗАДАНИЕ 1: JWT аутентификация
     'django_filters',
+    'drf_yasg',
 
     # Мои приложения
     'task_manager',
@@ -166,7 +167,7 @@ REST_FRAMEWORK = {
 # ==================== НАСТРОЙКИ SIMPLE JWT ====================
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),     # Время жизни access токена
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),        # Время жизни refresh токена
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),        # Время жизни refresh токена
     'ROTATE_REFRESH_TOKENS': True,                      # Обновлять refresh токены
     'BLACKLIST_AFTER_ROTATION': True,                   # Блокировать старые refresh токены
     'UPDATE_LAST_LOGIN': True,                          # Обновлять последний вход
